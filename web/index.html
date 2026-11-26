@@ -6344,7 +6344,13 @@ document.addEventListener("click", function (e) {
 
       const latest = String(rel.tag_name || "").replace(/^v/i, "");
       const newer = currentVersion && cmpVer(latest, currentVersion) > 0;
-      const asset = (rel.assets && rel.assets[0]) || null;
+      // 按当前操作系统挑选资产：Windows 优先 .exe，其余优先 Linux 二进制；
+      // 找不到匹配时退回第一个资产。避免 Windows 用户误下 Linux 版。
+      const assets = rel.assets || [];
+      const isWin = /windows|win32/i.test(navigator.userAgent || navigator.platform || "");
+      const asset = assets.find(a => isWin ? /\.exe$/i.test(a.name || "")
+                                            : !/\.exe$/i.test(a.name || ""))
+                    || assets[0] || null;
       let dl = (asset && asset.browser_download_url) || rel.html_url || RELEASES_PAGE;
       // 下载链接走代理加速：仅当直连 GitHub 不可用时才需要，但统一加代理更稳；
       // 若链接本身已是代理或不是 github.com 域名则保持原样。
