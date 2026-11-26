@@ -572,8 +572,28 @@ footer kbd { background: var(--line); border-radius: 5px; padding: 1px 6px; font
 .about-card .made-by { font-size: 15px; font-weight: 700; margin-top: 10px; }
 .about-card .ai-sig { font-size: 13px; color: var(--muted); font-style: italic; margin: 8px 0 16px; }
 .about-card .ver { font-size: 11.5px; color: var(--muted); }
+/* v1.9.11 更新检查：结果区 + 按钮 */
+.about-card .update-box {
+  margin-top: 14px; padding: 12px 14px; border: 1px solid var(--line);
+  border-radius: var(--r-sm); background: var(--bg); text-align: left;
+}
+.about-card .update-box .ub-title {
+  font-size: 12.5px; font-weight: 700; color: var(--text-2); margin-bottom: 8px;
+}
+.about-card .update-box .ub-line { font-size: 12px; color: var(--muted); line-height: 1.7; }
+.about-card .update-box .ub-line.ok { color: var(--green); }
+.about-card .update-box .ub-line.warn { color: var(--orange); }
+.about-card .update-box .ub-line.err { color: var(--red); }
+.about-card .update-box a { color: var(--primary); word-break: break-all; }
+.about-card .btn-row { display: flex; gap: 10px; margin-top: 14px; justify-content: center; }
+.about-card .btn-check {
+  background: transparent; color: var(--primary); border: 1px solid var(--primary);
+  border-radius: var(--r-sm); padding: 10px 22px; font-size: 13.5px; cursor: pointer;
+  min-height: 42px;
+}
+.about-card .btn-check:disabled { opacity: .6; cursor: wait; }
 .about-card .close {
-  margin-top: 14px; background: var(--primary); color: var(--on-primary);
+  margin-top: 0; background: var(--primary); color: var(--on-primary);
   border: none; border-radius: var(--r-sm); padding: 10px 36px;
   font-size: 13.5px; cursor: pointer; min-height: 42px;
 }
@@ -1211,7 +1231,7 @@ table.tbl { width: 100%; border: 1px solid var(--line); border-radius: var(--r-m
 <div id="start-screen">
   <div class="badge-line">TONGHE SPORTS MEET</div>
   <h1>同和中学校运会积分系统</h1>
-  <div class="sub">报名 · 编排 · 计分 · 大屏，一站式校运会管理平台<br><span class="sub-meta"><span id="start-ver">v1.9.10</span> · 本机运行 · 数据不出校</span></div>
+  <div class="sub">报名 · 编排 · 计分 · 大屏，一站式校运会管理平台<br><span class="sub-meta"><span id="start-ver">v1.9.11</span> · 本机运行 · 数据不出校</span></div>
   <button class="enter" id="btn-enter">进 入 系 统</button>
   <button class="ghost" id="btn-about-start">关于本系统</button>
   <div class="sig">2026届二班 曾令韬 制作 · Rust 核心版</div>
@@ -1230,8 +1250,16 @@ table.tbl { width: 100%; border: 1px solid var(--line); border-radius: var(--r-m
        愿每一次冲刺，都被温柔记下。</p>
     <p class="ai-sig">—— 由 Claude Opus 5.5 精心打磨<br>
        愿每一个名次，都经得起核对。</p>
-    <p class="ver" id="about-ver">Version 1.9.10 · Rust 核心 + 扩展架构 · 界面 2.0</p>
-    <button class="close" id="btn-about-close">关 闭</button>
+    <p class="ver" id="about-ver">Version 1.9.11 · Rust 核心 + 扩展架构 · 界面 2.0</p>
+    <div class="update-box">
+      <div class="ub-title">版本更新</div>
+      <div class="ub-line" id="update-status">启动后将自动检查新版本（需联网），也可手动检查。</div>
+      <div class="ub-line" id="update-detail"></div>
+    </div>
+    <div class="btn-row">
+      <button class="btn-check" id="btn-check-update">检查更新</button>
+      <button class="close" id="btn-about-close">关 闭</button>
+    </div>
   </div>
 </div>
 
@@ -1295,7 +1323,7 @@ table.tbl { width: 100%; border: 1px solid var(--line); border-radius: var(--r-m
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="4" width="17" height="16" rx="2.5"/><path d="M9.5 4v16"/><path d="m15.5 10-2 2 2 2"/></svg>
         <span class="nav-label">收起侧栏</span>
       </button>
-      <div class="ver" id="side-ver">v1.9.10</div>
+      <div class="ver" id="side-ver">v1.9.11</div>
     </div>
   </aside>
 
@@ -6199,6 +6227,155 @@ document.addEventListener("click", function (e) {
       out.textContent = "失败：" + (e.message || e);
     }
   });
+})();
+
+/* ================= v1.9.11 版本更新检查 =================
+ * 设计要点：
+ *  1. 更新源为 GitHub Releases API（仓库支持 CORS），浏览器直连，零后端改动、零新增依赖。
+ *  2. 离线优先：任何网络失败都静默降级，绝不阻断本机功能；手动检查才给出明确失败提示。
+ *  3. 两种触发：启动时后台静默检查一次 + 关于弹窗手动按钮。
+ *  4. 结果本地缓存（localStorage），启动检查每隔一段时间才真正请求，避免频繁联网。
+ */
+(function () {
+  const REPO = "boy106/sports-meet-system";
+  const API_LATEST = "https://api.github.com/repos/" + REPO + "/releases/latest";
+  const RELEASES_PAGE = "https://github.com/" + REPO + "/releases";
+  const CACHE_KEY = "sportsmeet_update_cache";
+  const CHECK_INTERVAL = 6 * 60 * 60 * 1000; // 后台检查间隔 6 小时
+  let currentVersion = ""; // 形如 "1.9.10"，由 /api/meta 填充
+
+  const statusEl = $("update-status");
+  const detailEl = $("update-detail");
+  const btn = $("btn-check-update");
+
+  function setStatus(text, cls) {
+    if (!statusEl) return;
+    statusEl.className = "ub-line" + (cls ? " " + cls : "");
+    statusEl.textContent = text;
+  }
+  function setDetail(html) {
+    if (!detailEl) return;
+    detailEl.innerHTML = html || "";
+  }
+
+  // 读取本机版本（/api/meta 已经每 20s 由 ping 拉取，这里独立再取一次以便首次即可用）
+  async function loadCurrentVersion() {
+    try {
+      const r = await fetch("/api/meta", { cache: "no-store" });
+      const d = r.ok ? await r.json() : {};
+      const v = (d.data && d.data.version) || d.version || "";
+      currentVersion = String(v).replace(/^v/i, "");
+    } catch (e) { /* 离线：保持空，比较逻辑会跳过 */ }
+    return currentVersion;
+  }
+
+  // 语义化版本号比较：a > b 返回 1，相等 0，a < b 返回 -1
+  function cmpVer(a, b) {
+    const pa = String(a).replace(/^v/i, "").split(/[.\-]/).map(Number);
+    const pb = String(b).replace(/^v/i, "").split(/[.\-]/).map(Number);
+    const n = Math.max(pa.length, pb.length);
+    for (let i = 0; i < n; i++) {
+      const x = pa[i] || 0, y = pb[i] || 0;
+      if (x > y) return 1;
+      if (x < y) return -1;
+    }
+    return 0;
+  }
+
+  function readCache() {
+    try { return JSON.parse(localStorage.getItem(CACHE_KEY) || "null"); } catch (e) { return null; }
+  }
+  function writeCache(obj) {
+    try { localStorage.setItem(CACHE_KEY, JSON.stringify(obj)); } catch (e) {}
+  }
+
+  // 核心：查询最新 Release 并与本机版本比较。silent=true 表示后台静默检查
+  async function check(silent) {
+    if (!btn) return;
+    if (!silent) {
+      btn.disabled = true;
+      setStatus("正在检查更新…");
+      setDetail("");
+    }
+    try {
+      if (!currentVersion) await loadCurrentVersion();
+      const ctl = new AbortController();
+      const timer = setTimeout(() => ctl.abort(), 8000); // 8 秒超时，离线不久等
+      let rel;
+      try {
+        const r = await fetch(API_LATEST, {
+          cache: "no-store",
+          signal: ctl.signal,
+          headers: { "Accept": "application/vnd.github+json" }
+        });
+        clearTimeout(timer);
+        if (r.status === 404) throw new Error("NO_RELEASE");
+        if (!r.ok) throw new Error("HTTP " + r.status);
+        rel = await r.json();
+      } catch (e) {
+        clearTimeout(timer);
+        throw e;
+      }
+
+      const latest = String(rel.tag_name || "").replace(/^v/i, "");
+      const newer = currentVersion && cmpVer(latest, currentVersion) > 0;
+      const asset = (rel.assets && rel.assets[0]) || null;
+      const dl = (asset && asset.browser_download_url) || rel.html_url || RELEASES_PAGE;
+
+      // 缓存结果（后台检查节流用）
+      writeCache({ at: Date.now(), latest: latest, newer: !!newer, download: dl,
+                   name: rel.name || ("v" + latest) });
+
+      if (newer) {
+        const notes = (rel.body || "").split("\n").filter(Boolean).slice(0, 4)
+          .map(s => esc(s)).join("<br>");
+        setStatus("发现新版本 v" + latest, "warn");
+        setDetail(
+          '当前 v' + esc(currentVersion) + ' · 最新 v' + esc(latest) + '<br>' +
+          (notes ? notes + '<br>' : '') +
+          '下载：<a href="' + esc(dl) + '" target="_blank" rel="noopener">点此获取新版</a>'
+        );
+        if (silent) toast("发现新版本 v" + latest + "，可在「关于」中查看", "info", 6000);
+      } else {
+        setStatus("已是最新版本 v" + (currentVersion || latest), "ok");
+        setDetail('<a href="' + RELEASES_PAGE + '" target="_blank" rel="noopener">查看全部版本</a>');
+        if (!silent) toast("当前已是最新版本", "ok");
+      }
+    } catch (e) {
+      const msg = String(e && e.message || e);
+      if (msg === "NO_RELEASE") {
+        setStatus("暂无已发布的版本", "warn");
+        setDetail('<a href="' + RELEASES_PAGE + '" target="_blank" rel="noopener">前往 Releases</a>');
+        if (!silent) toast("仓库还没有发布任何版本", "info");
+      } else {
+        setStatus(silent ? "自动检查跳过（离线或网络不可用）" : "检查失败：网络不可用", silent ? "" : "err");
+        setDetail(silent ? "" : '<a href="' + RELEASES_PAGE + '" target="_blank" rel="noopener">手动打开 Releases 页面</a>');
+        if (!silent) toast("检查更新失败：请确认已联网", "err", 5000);
+      }
+    } finally {
+      if (btn) btn.disabled = false;
+    }
+  }
+
+  // 手动按钮
+  if (btn) btn.onclick = () => check(false);
+
+  // 启动后台静默检查：带缓存节流，失败无提示
+  setTimeout(async () => {
+    const c = readCache();
+    const stale = !c || !c.at || (Date.now() - c.at > CHECK_INTERVAL);
+    if (!stale) {
+      // 用缓存快速回填界面，不再联网
+      if (c.newer) {
+        setStatus("发现新版本 v" + c.latest, "warn");
+        setDetail('下载：<a href="' + esc(c.download || RELEASES_PAGE) + '" target="_blank" rel="noopener">点此获取新版</a>');
+      } else {
+        setStatus("已是最新版本 v" + c.latest, "ok");
+      }
+      return;
+    }
+    await check(true);
+  }, 1500);
 })();
 </script>
 </body>

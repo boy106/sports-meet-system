@@ -1,6 +1,6 @@
 [package]
 name = "sports-meet"
-version = "1.9.10"
+version = "1.9.11"
 edition = "2021"
 description = "同和中学校运会积分系统（Rust 版）——核心 + 扩展架构，最小依赖"
 rust-version = "1.70"
