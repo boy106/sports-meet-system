@@ -50,7 +50,35 @@ cargo build --release --target x86_64-pc-windows-gnu
 
 ### 3. 升级
 
-替换可执行文件即可，`data/` 目录原样保留，数据结构不变。
+替换可执行文件即可，`data/` 目录原样保留，数据结构不变。程序也内置了**自动更新检查**，详见下方「自动更新」。
+
+## 自动更新（基于 GitHub Releases）
+
+程序内置**更新检查**，版本源为仓库的 [GitHub Releases](https://github.com/boy106/sports-meet-system/releases)。**离线完全不影响使用**——联网失败时静默跳过，绝不阻断任何本机功能。
+
+### 使用者：怎么检查 / 下载更新
+
+- **手动检查**：打开「关于本系统」弹窗 → 点「检查更新」按钮，显示是否有新版、更新说明与下载链接。
+- **自动检查**：程序启动约 1.5 秒后后台静默检查一次，结果缓存 6 小时避免频繁联网；发现新版时给出提示。
+- **国内网络**：内置多通道自动降级——优先走国内可用的代理（`gh-proxy.com`），失败再依次尝试直连与其他备用代理，因此**国内无法直连 GitHub 也能收到更新提示**。
+- **自动选对文件**：下载链接按操作系统自动选择——Windows 下 `.exe`，Linux 下无后缀文件，不会下错平台。
+
+拿到新版本后替换可执行文件即可，`data/` 无需改动（见「快速开始 → 升级」）。
+
+### 维护者：怎么发布新版本
+
+在仓库根目录执行一键发版脚本：
+
+```bash
+bash release.sh 1.9.13 "本次更新说明"
+```
+
+脚本自动完成：同步 4 处版本号 → 跑测试 → 提交并打 `v*` tag → 创建 Release → 推送。
+tag 推送后，[release.yml](.github/workflows/release.yml) 在 GitHub Actions 云端交叉编译 **Windows + Linux 双平台**二进制并自动挂到该 Release，**无需本机安装 mingw-w64 等编译环境**。
+
+> 前置：本机有 `cargo` 与 `gh` CLI，`gh auth login` 已登录且有 `repo` 权限，工作树干净。
+
+Release 列表：https://github.com/boy106/sports-meet-system/releases
 
 ## 配置 AI 助手（可选，不影响其他功能）
 
