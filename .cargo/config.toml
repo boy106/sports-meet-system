@@ -1,0 +1,5 @@
+# Windows 交叉编译：去掉 PE 头里的时间戳，使两次构建可复现。
+# 完整性盖章要求「两遍构建的二进制除数据区外逐字节一致」，
+# 而 mingw 默认每次写入当前时间 → 段 0 哈希每次都变。
+[target.x86_64-pc-windows-gnu]
+rustflags = ["-C", "link-arg=-Wl,--no-insert-timestamp"]

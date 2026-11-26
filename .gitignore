@@ -1,0 +1,28 @@
+# Rust 构建产物
+/target/
+**/*.rs.bk
+
+# 本地数据与运行产物（预置数据由发行包单独提供）
+/data/
+*.smev
+*.log
+logs/
+
+# 完整性盖章缓存（由 tools/integrity_stamp.py 生成）
+integrity_cache.bin
+
+# 授权密钥材料（切勿提交）
+/keys/
+*.key
+*.pem
+
+# AI 密钥配置（用环境变量或设置页填写，切勿提交）
+ai.json
+.env
+
+# 操作系统 / 编辑器
+.DS_Store
+Thumbs.db
+*.swp
+.idea/
+.vscode/

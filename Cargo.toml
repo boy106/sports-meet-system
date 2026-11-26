@@ -1,0 +1,45 @@
+[package]
+name = "sports-meet"
+version = "1.9.10"
+edition = "2021"
+description = "同和中学校运会积分系统（Rust 版）——核心 + 扩展架构，最小依赖"
+rust-version = "1.70"
+
+# 依赖说明（v1.2 更正，v1.5.1 复核）：
+# 本项目坚持「最小依赖」原则——HTTP 服务器、JSON 解析、存储、日志，
+# v1.5 新增的 SSE 流式响应、哈希链审计、签名令牌、智能推荐，
+# 以及 v1.5.1 新增的密钥慢哈希 KDF、开发者模式状态机、数据流加密、资源内嵌，
+# 全部为自实现（或编译器内置宏）；仅 xlsx 二进制格式因实现成本过高而引入一个 crate。
+# 如需彻底零依赖，可移除本依赖并删除 core/export.rs 中的 xlsx 分支。
+[dependencies]
+rust_xlsxwriter = "0.79"
+# v1.9.3：报名表模板下载/导入。rust_xlsxwriter 本身已通过 deflate 特性
+# 依赖 zip（用于生成 xlsx），这里把它提为直接依赖以复用同一份实现读 xlsx：
+# 依赖树不新增任何 crate，发行体积基本不变，却让「下载模板→填完→上传」
+# 形成闭环，不再要求用户去跑 Python 脚本。
+zip = { version = "2.4.2", default-features = false, features = ["deflate"] }
+
+[[bin]]
+name = "sports-meet"
+path = "src/main.rs"
+
+# 库目标：与二进制共享同一批源文件，仅为集成测试（tests/*.rs）开放访问。
+# 集成测试在独立 crate 中编译，若不导出库目标便无法调用 core::aim::channel
+# 的 seal/open —— 双端线格式契约测试正需要直接调用它们。
+[lib]
+name = "sports_meet"
+path = "src/lib.rs"
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+# ---- 发行加固（用户要求"不能轻易暴露密钥算法"）----
+# strip：剥离全部符号表与调试信息 —— 函数名、变量名、源码文件名不可读
+strip = true
+# panic=abort：去掉 panic 展开表与回溯字符串，且不暴露 panic 位置
+panic = "abort"
+# 溢出检查关闭（release 默认），减小体积
+overflow-checks = false
+# 不生成 debug 信息
+debug = false
