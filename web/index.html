@@ -1231,7 +1231,7 @@ table.tbl { width: 100%; border: 1px solid var(--line); border-radius: var(--r-m
 <div id="start-screen">
   <div class="badge-line">TONGHE SPORTS MEET</div>
   <h1>同和中学校运会积分系统</h1>
-  <div class="sub">报名 · 编排 · 计分 · 大屏，一站式校运会管理平台<br><span class="sub-meta"><span id="start-ver">v1.9.11</span> · 本机运行 · 数据不出校</span></div>
+  <div class="sub">报名 · 编排 · 计分 · 大屏，一站式校运会管理平台<br><span class="sub-meta"><span id="start-ver">v1.9.12</span> · 本机运行 · 数据不出校</span></div>
   <button class="enter" id="btn-enter">进 入 系 统</button>
   <button class="ghost" id="btn-about-start">关于本系统</button>
   <div class="sig">2026届二班 曾令韬 制作 · Rust 核心版</div>
@@ -1250,7 +1250,7 @@ table.tbl { width: 100%; border: 1px solid var(--line); border-radius: var(--r-m
        愿每一次冲刺，都被温柔记下。</p>
     <p class="ai-sig">—— 由 Claude Opus 5.5 精心打磨<br>
        愿每一个名次，都经得起核对。</p>
-    <p class="ver" id="about-ver">Version 1.9.11 · Rust 核心 + 扩展架构 · 界面 2.0</p>
+    <p class="ver" id="about-ver">Version 1.9.12 · Rust 核心 + 扩展架构 · 界面 2.0</p>
     <div class="update-box">
       <div class="ub-title">版本更新</div>
       <div class="ub-line" id="update-status">启动后将自动检查新版本（需联网），也可手动检查。</div>
@@ -1323,7 +1323,7 @@ table.tbl { width: 100%; border: 1px solid var(--line); border-radius: var(--r-m
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="4" width="17" height="16" rx="2.5"/><path d="M9.5 4v16"/><path d="m15.5 10-2 2 2 2"/></svg>
         <span class="nav-label">收起侧栏</span>
       </button>
-      <div class="ver" id="side-ver">v1.9.11</div>
+      <div class="ver" id="side-ver">v1.9.12</div>
     </div>
   </aside>
 
@@ -6231,18 +6231,34 @@ document.addEventListener("click", function (e) {
 
 /* ================= v1.9.11 版本更新检查 =================
  * 设计要点：
- *  1. 更新源为 GitHub Releases API（仓库支持 CORS），浏览器直连，零后端改动、零新增依赖。
- *  2. 离线优先：任何网络失败都静默降级，绝不阻断本机功能；手动检查才给出明确失败提示。
- *  3. 两种触发：启动时后台静默检查一次 + 关于弹窗手动按钮。
- *  4. 结果本地缓存（localStorage），启动检查每隔一段时间才真正请求，避免频繁联网。
+ *  1. 更新源为 GitHub Releases API，浏览器直连，零后端改动、零新增依赖。
+ *  2. 多通道自动降级：国内网络常无法直连 GitHub，依次尝试「直连 → 多个公共代理」，
+ *     任一通道成功即用；全部失败则静默降级，绝不阻断本机功能。
+ *  3. 离线优先：任何网络失败都静默降级，手动检查才给出明确失败提示。
+ *  4. 两种触发：启动时后台静默检查一次 + 关于弹窗手动按钮。
+ *  5. 结果本地缓存（localStorage），启动检查每隔一段时间才真正请求，避免频繁联网。
+ *  6. 下载链接自动走代理加速（国内可直连 GitHub 时保留原始链接）。
  */
 (function () {
   const REPO = "boy106/sports-meet-system";
-  const API_LATEST = "https://api.github.com/repos/" + REPO + "/releases/latest";
+  const API_PATH = "repos/" + REPO + "/releases/latest";
+  const API_LATEST = "https://api.github.com/" + API_PATH;
+  // 多通道：gh-proxy.com 放首位（国内直连可用、已验证 CORS），其后是直连与备用代理。
+  // 国内用户第一个通道即成功秒开；国外/代理环境下首个通道失效会自动降级到直连。
+  // 每个代理只做 URL 前缀拼接，失败自动切换到下一个。
+  const API_CHANNELS = [
+    "https://gh-proxy.com/https://api.github.com/" + API_PATH,
+    API_LATEST,
+    "https://ghproxy.net/https://api.github.com/" + API_PATH,
+    "https://gh-proxy.net/https://api.github.com/" + API_PATH
+  ];
+  // 下载代理：把 github.com 的 Release 资产链接转成国内加速
+  const DOWNLOAD_PROXY = "https://gh-proxy.com/";
   const RELEASES_PAGE = "https://github.com/" + REPO + "/releases";
   const CACHE_KEY = "sportsmeet_update_cache";
   const CHECK_INTERVAL = 6 * 60 * 60 * 1000; // 后台检查间隔 6 小时
-  let currentVersion = ""; // 形如 "1.9.10"，由 /api/meta 填充
+  const CHANNEL_TIMEOUT = 6000; // 单通道超时（毫秒）
+  let currentVersion = ""; // 形如 "1.9.11"，由 /api/meta 填充
 
   const statusEl = $("update-status");
   const detailEl = $("update-detail");
@@ -6299,28 +6315,42 @@ document.addEventListener("click", function (e) {
     }
     try {
       if (!currentVersion) await loadCurrentVersion();
-      const ctl = new AbortController();
-      const timer = setTimeout(() => ctl.abort(), 8000); // 8 秒超时，离线不久等
-      let rel;
-      try {
-        const r = await fetch(API_LATEST, {
-          cache: "no-store",
-          signal: ctl.signal,
-          headers: { "Accept": "application/vnd.github+json" }
-        });
-        clearTimeout(timer);
-        if (r.status === 404) throw new Error("NO_RELEASE");
-        if (!r.ok) throw new Error("HTTP " + r.status);
-        rel = await r.json();
-      } catch (e) {
-        clearTimeout(timer);
-        throw e;
+      // 依次尝试每个通道，任一成功即返回；全部失败抛最后一个错误
+      let rel = null, lastErr = null;
+      for (const url of API_CHANNELS) {
+        const ctl = new AbortController();
+        const timer = setTimeout(() => ctl.abort(), CHANNEL_TIMEOUT);
+        try {
+          const r = await fetch(url, {
+            cache: "no-store",
+            signal: ctl.signal,
+            headers: { "Accept": "application/vnd.github+json" }
+          });
+          clearTimeout(timer);
+          if (r.status === 404) throw new Error("NO_RELEASE");
+          if (!r.ok) throw new Error("HTTP " + r.status);
+          const j = await r.json();
+          if (!j || !j.tag_name) throw new Error("BAD_DATA");
+          rel = j;
+          break; // 成功
+        } catch (e) {
+          clearTimeout(timer);
+          lastErr = e;
+          if (String(e && e.message) === "NO_RELEASE") throw e; // 仓库确实无 Release，不必再试
+          // 其余通道失败，继续下一个
+        }
       }
+      if (!rel) throw lastErr || new Error("ALL_CHANNELS_FAILED");
 
       const latest = String(rel.tag_name || "").replace(/^v/i, "");
       const newer = currentVersion && cmpVer(latest, currentVersion) > 0;
       const asset = (rel.assets && rel.assets[0]) || null;
-      const dl = (asset && asset.browser_download_url) || rel.html_url || RELEASES_PAGE;
+      let dl = (asset && asset.browser_download_url) || rel.html_url || RELEASES_PAGE;
+      // 下载链接走代理加速：仅当直连 GitHub 不可用时才需要，但统一加代理更稳；
+      // 若链接本身已是代理或不是 github.com 域名则保持原样。
+      if (/^https?:\/\/github\.com\//i.test(dl)) {
+        dl = DOWNLOAD_PROXY + dl;
+      }
 
       // 缓存结果（后台检查节流用）
       writeCache({ at: Date.now(), latest: latest, newer: !!newer, download: dl,
@@ -6338,18 +6368,18 @@ document.addEventListener("click", function (e) {
         if (silent) toast("发现新版本 v" + latest + "，可在「关于」中查看", "info", 6000);
       } else {
         setStatus("已是最新版本 v" + (currentVersion || latest), "ok");
-        setDetail('<a href="' + RELEASES_PAGE + '" target="_blank" rel="noopener">查看全部版本</a>');
+        setDetail('<a href="' + DOWNLOAD_PROXY + RELEASES_PAGE + '" target="_blank" rel="noopener">查看全部版本</a>');
         if (!silent) toast("当前已是最新版本", "ok");
       }
     } catch (e) {
       const msg = String(e && e.message || e);
       if (msg === "NO_RELEASE") {
         setStatus("暂无已发布的版本", "warn");
-        setDetail('<a href="' + RELEASES_PAGE + '" target="_blank" rel="noopener">前往 Releases</a>');
+        setDetail('<a href="' + DOWNLOAD_PROXY + RELEASES_PAGE + '" target="_blank" rel="noopener">前往 Releases</a>');
         if (!silent) toast("仓库还没有发布任何版本", "info");
       } else {
         setStatus(silent ? "自动检查跳过（离线或网络不可用）" : "检查失败：网络不可用", silent ? "" : "err");
-        setDetail(silent ? "" : '<a href="' + RELEASES_PAGE + '" target="_blank" rel="noopener">手动打开 Releases 页面</a>');
+        setDetail(silent ? "" : '<a href="' + DOWNLOAD_PROXY + RELEASES_PAGE + '" target="_blank" rel="noopener">手动打开 Releases 页面</a>');
         if (!silent) toast("检查更新失败：请确认已联网", "err", 5000);
       }
     } finally {

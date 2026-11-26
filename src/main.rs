@@ -15,7 +15,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 /// 当前版本号（v1.5.1）。
-const VERSION: &str = "v1.9.11";
+const VERSION: &str = "v1.9.12";
 
 /// 配置文件结构（--config 指定；命令行参数优先级高于配置文件）。
 #[derive(Default)]
