@@ -1,0 +1,67 @@
+name: Release Build
+
+# 当推送 v* 标签（如 v1.9.13）时自动触发：
+#   交叉编译 Linux + Windows 两个平台的二进制，挂到同名 Release 上。
+# 用法：本地执行 release.sh，或手动打 tag 后 git push origin vX.Y.Z
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write   # 上传 Release 资产所需
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-gnu
+            asset: sports-meet-linux-x86_64
+          - target: x86_64-pc-windows-gnu
+            asset: sports-meet-windows-x86_64.exe
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Install mingw-w64 (Windows target only)
+        if: matrix.target == 'x86_64-pc-windows-gnu'
+        run: sudo apt-get update && sudo apt-get install -y gcc-mingw-w64-x86-64
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-${{ matrix.target }}-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-${{ matrix.target }}-
+
+      - name: Build
+        run: cargo build --release --target ${{ matrix.target }}
+
+      - name: Prepare asset
+        run: |
+          mkdir -p dist
+          if [ "${{ matrix.target }}" = "x86_64-pc-windows-gnu" ]; then
+            cp target/${{ matrix.target }}/release/sports-meet.exe dist/${{ matrix.asset }}
+          else
+            cp target/${{ matrix.target }}/release/sports-meet dist/${{ matrix.asset }}
+          fi
+          chmod 755 dist/${{ matrix.asset }}
+
+      - name: Upload to Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/${{ matrix.asset }}
+          fail_on_unmatched_files: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
